@@ -2,8 +2,8 @@
 import SwiftUI
 import Combine
 
-/// Handles smooth transitions between main areas of the app.
-/// Acts as a lightweight navigation coordinator.
+
+
 @MainActor
 final class FlowRouter: ObservableObject {
 
