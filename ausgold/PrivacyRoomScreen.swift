@@ -9,19 +9,19 @@ struct PrivacyRoomScreen: View {
     @EnvironmentObject private var router: FlowRouter
 
     @State private var isLoaded: Bool = false
+    @State private var showOverlay: Bool = true
 
     var body: some View {
         ZStack {
             // Background
             ColorTokens.harvestSky.ignoresSafeArea()
 
-            // Table with the policy page
+            // Policy page
             TableHost(address: Constants.privacyAddress, isLoaded: $isLoaded)
-                .opacity(isLoaded ? 1 : 0)
-                .animation(.easeInOut(duration: 0.25), value: isLoaded)
+                .ignoresSafeArea()
 
-            // Loading overlay
-            if !isLoaded {
+            // Loading overlay (now controlled by showOverlay + isLoaded)
+            if showOverlay && !isLoaded {
                 VStack(spacing: 14) {
                     ProgressView()
                         .tint(ColorTokens.harvestGold)
@@ -39,6 +39,7 @@ struct PrivacyRoomScreen: View {
                         )
                         .shadow(color: ColorTokens.shadow, radius: 14, x: 0, y: 6)
                 )
+                .transition(.opacity)
             }
 
             // Simple top bar with Close
@@ -68,13 +69,35 @@ struct PrivacyRoomScreen: View {
                 }
                 .padding(.horizontal, 12)
                 .frame(height: 50)
-                .background(ColorTokens.bark.opacity(0.96).ignoresSafeArea(edges: .top))
+                .background(
+                    ColorTokens.bark
+                        .opacity(0.96)
+                        .ignoresSafeArea(edges: .top)
+                )
 
                 Spacer()
             }
         }
         .onAppear {
             OrientationKeeper.shared.allowFlexible()
+            isLoaded = false
+            showOverlay = true
+
+            // Fallback: hide overlay after X seconds even if isLoaded never flips
+            DispatchQueue.main.asyncAfter(deadline: .now() + Constants.Timing.tableFallbackSeconds) {
+                if !isLoaded {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        showOverlay = false
+                    }
+                }
+            }
+        }
+        .onChange(of: isLoaded) { loaded in
+            if loaded {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    showOverlay = false
+                }
+            }
         }
     }
 }

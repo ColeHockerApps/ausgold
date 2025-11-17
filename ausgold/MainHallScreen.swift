@@ -28,7 +28,6 @@ struct MainHallScreen: View {
 
             // Content
             VStack(spacing: 22) {
-               
                 Image("logo")
                     .resizable()
                     .scaledToFit()
@@ -36,7 +35,7 @@ struct MainHallScreen: View {
                     .shadow(radius: 6)
                     .padding(.top, 30)
 
-                // Заголовок
+                // Title
                 Text(Constants.gameTitle)
                     .font(AppTheme.Fonts.title)
                     .foregroundStyle(ColorTokens.textPrimary)
@@ -48,8 +47,10 @@ struct MainHallScreen: View {
 
                 Spacer(minLength: 12)
 
-                // Кнопки
+                // Buttons block (width is limited so it does not stretch on iPad)
                 buttons
+                    .frame(maxWidth: 420)              // main width cap (iPad)
+                    .frame(maxWidth: .infinity)        // center inside screen
 
                 Spacer()
             }
@@ -78,6 +79,8 @@ struct MainHallScreen: View {
         }
     }
 
+    // MARK: - Buttons
+
     private var buttons: some View {
         VStack(spacing: 14) {
             // Play
@@ -101,7 +104,7 @@ struct MainHallScreen: View {
                 .shadow(color: ColorTokens.shadow.opacity(0.35), radius: 12, x: 0, y: 6)
             }
 
-            // Secondary buttons
+            // Row: How to Play + Info
             HStack(spacing: 12) {
                 Button {
                     haptics.play(.softTick)
@@ -118,6 +121,7 @@ struct MainHallScreen: View {
                 }
             }
 
+            // Row: Privacy + Rate
             HStack(spacing: 12) {
                 Button {
                     haptics.play(.softTick)
