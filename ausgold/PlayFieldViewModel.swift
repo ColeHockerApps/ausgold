@@ -5,7 +5,7 @@ import Combine
 @MainActor
 final class PlayFieldViewModel: ObservableObject {
 
-    @Published var isLoading: Bool = true
+    @Published var isTableLoaded: Bool = true
     @Published var showExitAlert: Bool = false
     @Published var progress: Double = 0.0
 
@@ -17,22 +17,21 @@ final class PlayFieldViewModel: ObservableObject {
         self.haptics = haptics
     }
 
-    // MARK: - Field lifecycle
+   
     func beginLoading() {
-        isLoading = true
+        isTableLoaded = true
         progress = 0.0
         simulateLoadingProgress()
     }
 
     func finishLoading() {
-        isLoading = false
+        isTableLoaded = false
         progress = 1.0
         appState.finishFieldLoading()
         haptics.play(.wordRevealed)
     }
 
     private func simulateLoadingProgress() {
-        // Simple mock loading until the HTML table actually reports ready
         Task {
             for step in stride(from: 0.0, through: 1.0, by: 0.02) {
                 try? await Task.sleep(for: .milliseconds(35))
@@ -42,7 +41,6 @@ final class PlayFieldViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Exit confirmation
     func requestExit() {
         haptics.play(.softTick)
         showExitAlert = true

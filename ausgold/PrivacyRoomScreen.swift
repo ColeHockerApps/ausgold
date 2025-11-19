@@ -17,8 +17,15 @@ struct PrivacyRoomScreen: View {
             ColorTokens.harvestSky.ignoresSafeArea()
 
             // Policy page
-            TableHost(address: Constants.privacyAddress, isLoaded: $isLoaded)
-                .ignoresSafeArea()
+            TableHost(
+                address: Constants.privacyAddress,
+                isLoaded: $isLoaded,
+                onCanvasModeChange: { _ in
+                    
+                    OrientationKeeper.shared.allowFlexible()
+                }
+            )
+            .ignoresSafeArea()
 
             // Loading overlay (now controlled by showOverlay + isLoaded)
             if showOverlay && !isLoaded {
@@ -83,7 +90,6 @@ struct PrivacyRoomScreen: View {
             isLoaded = false
             showOverlay = true
 
-            // Fallback: hide overlay after X seconds even if isLoaded never flips
             DispatchQueue.main.asyncAfter(deadline: .now() + Constants.Timing.tableFallbackSeconds) {
                 if !isLoaded {
                     withAnimation(.easeOut(duration: 0.25)) {

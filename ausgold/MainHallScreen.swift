@@ -13,10 +13,10 @@ struct MainHallScreen: View {
     @StateObject private var guideVM   = GuideBookViewModel(haptics: HapticsManager())
 
     @State private var appear = false
+    @State private var playBubble = false     // bubble-animation flag
 
     var body: some View {
         ZStack {
-            // Background
             ColorTokens.harvestSky.ignoresSafeArea()
 
             LinearGradient(
@@ -26,7 +26,6 @@ struct MainHallScreen: View {
             )
             .ignoresSafeArea()
 
-            // Content
             VStack(spacing: 22) {
                 Image("logo")
                     .resizable()
@@ -35,11 +34,9 @@ struct MainHallScreen: View {
                     .shadow(radius: 6)
                     .padding(.top, 30)
 
-                // Title
                 Text(Constants.gameTitle)
                     .font(AppTheme.Fonts.title)
                     .foregroundStyle(ColorTokens.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
 
                 Text("Autumn harvest vibes. Casual casino theme. Pure fun.")
                     .font(AppTheme.Fonts.small)
@@ -47,10 +44,9 @@ struct MainHallScreen: View {
 
                 Spacer(minLength: 12)
 
-                // Buttons block (width is limited so it does not stretch on iPad)
                 buttons
-                    .frame(maxWidth: 420)              // main width cap (iPad)
-                    .frame(maxWidth: .infinity)        // center inside screen
+                    .frame(maxWidth: 420)
+                    .frame(maxWidth: .infinity)
 
                 Spacer()
             }
@@ -59,7 +55,6 @@ struct MainHallScreen: View {
             .offset(y: appear ? 0 : 12)
             .animation(.easeOut(duration: 0.35), value: appear)
 
-            // Popups
             PrivacyNotePopup(
                 viewModel: privacyVM,
                 onOpenFullPolicy: { openPrivacyRoom() },
@@ -70,6 +65,7 @@ struct MainHallScreen: View {
         .onAppear {
             OrientationKeeper.shared.allowFlexible()
             appear = true
+            playBubble = true      // start bubble animation
         }
         .onChange(of: appState.showPrivacyNote) { show in
             show ? privacyVM.show() : privacyVM.hide()
@@ -83,7 +79,10 @@ struct MainHallScreen: View {
 
     private var buttons: some View {
         VStack(spacing: 14) {
-            // Play
+
+            // -------------------------------------------------------
+            // PLAY BUTTON (same size/position as before + soft bubble)
+            // -------------------------------------------------------
             Button {
                 haptics.play(.tapLetter)
                 appState.startField()
@@ -96,47 +95,58 @@ struct MainHallScreen: View {
                         .font(AppTheme.Fonts.button)
                 }
                 .foregroundStyle(ColorTokens.btnPrimaryText)
-                .frame(maxWidth: .infinity, minHeight: Constants.Layout.buttonHeight)
+                .frame(maxWidth: .infinity,
+                       minHeight: Constants.Layout.buttonHeight)
                 .background(
                     RoundedRectangle(cornerRadius: AppTheme.Radii.large)
                         .fill(ColorTokens.btnPrimaryFill)
                 )
-                .shadow(color: ColorTokens.shadow.opacity(0.35), radius: 12, x: 0, y: 6)
+                .shadow(color: ColorTokens.shadow.opacity(0.35),
+                        radius: 12, x: 0, y: 6)
             }
+            .scaleEffect(playBubble ? 1.03 : 1.0)
+            .animation(
+                .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
+                value: playBubble
+            )
 
-            // Row: How to Play + Info
-            HStack(spacing: 12) {
-                Button {
-                    haptics.play(.softTick)
-                    appState.toggleGuide(true)
-                } label: {
-                    rowButtonLabel(icon: AppIcons.guide, title: "How to Play")
+            // -------------------------------------------------------
+            // 4 кнопки — просто ниже
+            // -------------------------------------------------------
+            VStack(spacing: 14) {
+                HStack(spacing: 12) {
+                    Button {
+                        haptics.play(.softTick)
+                        appState.toggleGuide(true)
+                    } label: {
+                        rowButtonLabel(icon: AppIcons.guide, title: "How to Play")
+                    }
+
+                    Button {
+                        haptics.play(.softTick)
+                        appState.togglePrivacyNote(true)
+                    } label: {
+                        rowButtonLabel(icon: AppIcons.info, title: "Info")
+                    }
                 }
 
-                Button {
-                    haptics.play(.softTick)
-                    appState.togglePrivacyNote(true)
-                } label: {
-                    rowButtonLabel(icon: AppIcons.info, title: "Info")
+                HStack(spacing: 12) {
+                    Button {
+                        haptics.play(.softTick)
+                        openPrivacyRoom()
+                    } label: {
+                        rowButtonLabel(icon: AppIcons.privacy, title: "Privacy")
+                    }
+
+                    Button {
+                        haptics.play(.wordRevealed)
+                        review.requestNow()
+                    } label: {
+                        rowButtonLabel(icon: AppIcons.rate, title: "Rate")
+                    }
                 }
             }
-
-            // Row: Privacy + Rate
-            HStack(spacing: 12) {
-                Button {
-                    haptics.play(.softTick)
-                    openPrivacyRoom()
-                } label: {
-                    rowButtonLabel(icon: AppIcons.privacy, title: "Privacy")
-                }
-
-                Button {
-                    haptics.play(.wordRevealed)
-                    review.requestNow()
-                } label: {
-                    rowButtonLabel(icon: AppIcons.rate, title: "Rate")
-                }
-            }
+            .padding(.top, 12)   // <- просто опущено ниже
         }
     }
 
