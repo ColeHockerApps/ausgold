@@ -13,7 +13,10 @@ struct AppIcons {
     static let close       = Image(systemName: "xmark.circle.fill")
     static let harvest     = Image(systemName: "basket.fill")
     static let alert       = Image(systemName: "exclamationmark.triangle.fill")
+    static let person = Image(systemName: "person.crop.circle")
 
+    static let profile = Image(systemName: "person.crop.circle")
+    static let trophy = Image(systemName: "trophy.fill")
     // Decorative / thematic icons
     static let pumpkin     = Image(systemName: "pumpkin")       // iOS 18+, fallback below
     static let leaf        = Image(systemName: "leaf.fill")

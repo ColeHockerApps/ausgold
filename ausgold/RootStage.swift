@@ -21,6 +21,14 @@ struct RootStage: View {
 //                PlayFieldScreen()
             case .privacyRoom:
                 PrivacyRoomScreen()
+                
+            case .profile:
+                           ProfileScreen(store: ProfileStore())
+
+                       case .achievements:
+                           AchievementsScreen()
+                
+                
             }
         }
         .animation(.easeInOut(duration: 0.25), value: appState.screen)

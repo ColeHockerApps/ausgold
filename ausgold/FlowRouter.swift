@@ -2,39 +2,47 @@
 import SwiftUI
 import Combine
 
-
-
 @MainActor
 final class FlowRouter: ObservableObject {
 
-    @Published var activeScreen: AppState.Screen = .mainHall
-    @Published var transitionActive: Bool = false
+    // Токены на случай, если где-то используется привязка к ID
+    // (например, для сброса NavigationStack). Сейчас они ни к чему не привязаны
+    // и не ломают существующую логику.
+    @Published var mainHallToken  = UUID()
+    @Published var fieldToken     = UUID()
+    @Published var privacyToken   = UUID()
 
-    /// Fades duration between screen changes
-    private let transitionDelay: Double = 0.25
-
-    func go(to screen: AppState.Screen) {
-        guard activeScreen != screen else { return }
-        withAnimation(.easeInOut(duration: transitionDelay)) {
-            transitionActive = true
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + transitionDelay) {
-            self.activeScreen = screen
-            withAnimation(.easeInOut(duration: self.transitionDelay)) {
-                self.transitionActive = false
-            }
-        }
-    }
-
-    func backToMain() {
-        go(to: .mainHall)
-    }
-
+    /// Вызывается из MainHallScreen при переходе к игре.
+    /// Вся реальная смена экрана уже делается через AppState.startField(),
+    /// поэтому здесь оставляем мягкий "якорь" для возможной навигации.
     func openField() {
-        go(to: .playField)
+        fieldToken = UUID()
     }
 
-    func openPrivacyRoom() {
-        go(to: .privacyRoom)
+    /// Вызывается из PrivacyRoomScreen при закрытии политики.
+    /// Основной переход назад обрабатывается через AppState.enterMainHall().
+    func backToMain() {
+        mainHallToken = UUID()
     }
+
+    /// Вызывается из MainHallScreen при открытии полноэкранной политики.
+    /// Сам переход делает AppState.openPrivacyRoom().
+    func openPrivacyRoom() {
+        privacyToken = UUID()
+    }
+    
+    
+    
+    
+    @Published var showProfile: Bool = false
+    @Published var showAchievements: Bool = false
+
+    func openProfile() {
+        showProfile = true
+    }
+
+    func openAchievements() {
+        showAchievements = true
+    }
+    
 }

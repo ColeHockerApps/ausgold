@@ -9,14 +9,15 @@ struct MainHallScreen: View {
     @EnvironmentObject private var router: FlowRouter
     @EnvironmentObject private var review: ReviewManager
 
-    @StateObject private var privacyVM = PrivacyNoteViewModel(haptics: HapticsManager())
-    @StateObject private var guideVM   = GuideBookViewModel(haptics: HapticsManager())
+    @StateObject private var privacyVM    = PrivacyNoteViewModel(haptics: HapticsManager())
+    @StateObject private var onboardingVM = OnboardingViewModel()
 
     @State private var appear = false
-    @State private var playBubble = false     // bubble-animation flag
+    @State private var playBubble = false
 
     var body: some View {
         ZStack {
+            // background
             ColorTokens.harvestSky.ignoresSafeArea()
 
             LinearGradient(
@@ -26,6 +27,7 @@ struct MainHallScreen: View {
             )
             .ignoresSafeArea()
 
+            // content
             VStack(spacing: 22) {
                 Image("logo")
                     .resizable()
@@ -55,23 +57,29 @@ struct MainHallScreen: View {
             .offset(y: appear ? 0 : 12)
             .animation(.easeOut(duration: 0.35), value: appear)
 
+            // popups
             PrivacyNotePopup(
                 viewModel: privacyVM,
                 onOpenFullPolicy: { openPrivacyRoom() },
                 onDismiss: { appState.togglePrivacyNote(false) }
             )
-            GuideBookPopup(viewModel: guideVM, onDismiss: { appState.toggleGuide(false) })
+
+            if appState.showGuide {
+                OnboardingPopup(
+                    viewModel: onboardingVM,
+                    onClose: {
+                        appState.toggleGuide(false)
+                    }
+                )
+            }
         }
         .onAppear {
             OrientationKeeper.shared.allowFlexible()
             appear = true
-            playBubble = true      // start bubble animation
+            playBubble = true
         }
         .onChange(of: appState.showPrivacyNote) { show in
             show ? privacyVM.show() : privacyVM.hide()
-        }
-        .onChange(of: appState.showGuide) { show in
-            show ? guideVM.show() : guideVM.hide()
         }
     }
 
@@ -79,10 +87,7 @@ struct MainHallScreen: View {
 
     private var buttons: some View {
         VStack(spacing: 14) {
-
-            // -------------------------------------------------------
-            // PLAY BUTTON (same size/position as before + soft bubble)
-            // -------------------------------------------------------
+            // play с мягким bubble
             Button {
                 haptics.play(.tapLetter)
                 appState.startField()
@@ -95,14 +100,18 @@ struct MainHallScreen: View {
                         .font(AppTheme.Fonts.button)
                 }
                 .foregroundStyle(ColorTokens.btnPrimaryText)
-                .frame(maxWidth: .infinity,
-                       minHeight: Constants.Layout.buttonHeight)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: Constants.Layout.buttonHeight
+                )
                 .background(
                     RoundedRectangle(cornerRadius: AppTheme.Radii.large)
                         .fill(ColorTokens.btnPrimaryFill)
                 )
-                .shadow(color: ColorTokens.shadow.opacity(0.35),
-                        radius: 12, x: 0, y: 6)
+                .shadow(
+                    color: ColorTokens.shadow.opacity(0.35),
+                    radius: 12, x: 0, y: 6
+                )
             }
             .scaleEffect(playBubble ? 1.03 : 1.0)
             .animation(
@@ -110,13 +119,37 @@ struct MainHallScreen: View {
                 value: playBubble
             )
 
-            // -------------------------------------------------------
-            // 4 кнопки — просто ниже
-            // -------------------------------------------------------
+            // блоки под Play
             VStack(spacing: 14) {
+
+                // profile / achievements
                 HStack(spacing: 12) {
                     Button {
                         haptics.play(.softTick)
+                        appState.openProfile()
+                    } label: {
+                        rowButtonLabel(
+                            icon: Image(systemName: "person.crop.circle"),
+                            title: "Profile"
+                        )
+                    }
+
+                    Button {
+                        haptics.play(.softTick)
+                        appState.openAchievements()
+                    } label: {
+                        rowButtonLabel(
+                            icon: Image(systemName: "rosette"),
+                            title: "Achievements"
+                        )
+                    }
+                }
+
+                // how to play / info
+                HStack(spacing: 12) {
+                    Button {
+                        haptics.play(.softTick)
+                        onboardingVM.reset()
                         appState.toggleGuide(true)
                     } label: {
                         rowButtonLabel(icon: AppIcons.guide, title: "How to Play")
@@ -130,6 +163,7 @@ struct MainHallScreen: View {
                     }
                 }
 
+                // privacy / rate
                 HStack(spacing: 12) {
                     Button {
                         haptics.play(.softTick)
@@ -146,7 +180,7 @@ struct MainHallScreen: View {
                     }
                 }
             }
-            .padding(.top, 12)   // <- просто опущено ниже
+            .padding(.top, 12)
         }
     }
 
@@ -157,11 +191,16 @@ struct MainHallScreen: View {
                 .foregroundStyle(ColorTokens.harvestGold)
             Text(title)
                 .font(AppTheme.Fonts.button)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)   // чтобы "Achievements" не переносилось
                 .foregroundStyle(ColorTokens.btnSecondaryText)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: Constants.Layout.buttonHeight)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: Constants.Layout.buttonHeight
+        )
         .background(
             RoundedRectangle(cornerRadius: AppTheme.Radii.large)
                 .fill(ColorTokens.btnSecondaryFill)
